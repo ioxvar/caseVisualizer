@@ -1,0 +1,27 @@
+# Ignore environment variables
+.env
+
+# Ignore Python cache files
+__pycache__/
+*.py[cod]
+
+# Ignore virtual environment folders
+venv/
+env/
+ENV/
+.venv/
+
+# Ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore IDE-specific files
+.idea/
+*.sublime-workspace
+*.sublime-project
+.vscode/
+
+# Ignore other common files
+*.DS_Store
+*.log
+*.sqlite3
+*.pkl
