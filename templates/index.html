@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Legal Case Analyzer</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.css" rel="stylesheet" type="text/css" />
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; }
+        #result { margin-top: 20px; }
+        #timeline, #entity-graph { width: 100%; height: 400px; border: 1px solid #ccc; margin-top: 20px; }
+        .step { display: none; }
+        .step.active { display: block; }
+        #collaboration-panel { margin-top: 20px; border: 1px solid #ccc; padding: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Legal Case Analyzer</h1>
+    
+    <div id="case-builder">
+        <h2>Interactive Case Builder</h2>
+        <div id="step1" class="step active">
+            <h3>Step 1: Case Overview</h3>
+            <label for="case-title">Case Title:</label><br>
+            <input type="text" id="case-title" name="case_title" required><br>
+            <label for="law-area">Area of Law:</label><br>
+            <select id="law-area" name="law_area" required>
+                <option value="intellectual-property">Intellectual Property</option>
+                <option value="environmental">Environmental</option>
+                <option value="contract">Contract</option>
+                <option value="employment">Employment</option>
+                <option value="financial-regulation">Financial Regulation</option>
+            </select><br>
+            <button onclick="nextStep(2)">Next</button>
+        </div>
+        
+        <div id="step2" class="step">
+            <h3>Step 2: Parties Involved</h3>
+            <div id="parties-list"></div>
+            <button onclick="addParty()">Add Party</button><br>
+            <button onclick="nextStep(3)">Next</button>
+            <button onclick="previousStep(1)">Previous</button>
+        </div>
+        
+        <div id="step3" class="step">
+            <h3>Step 3: Key Events</h3>
+            <div id="events-list"></div>
+            <button onclick="addEvent()">Add Event</button><br>
+            <button onclick="nextStep(4)">Next</button>
+            <button onclick="previousStep(2)">Previous</button>
+        </div>
+        
+        <div id="step4" class="step">
+            <h3>Step 4: Case Description</h3>
+            <textarea id="case-description" name="case_description" rows="4" cols="50" required></textarea><br>
+            <button onclick="analyzeCase()">Analyze Case</button>
+            <button onclick="previousStep(3)">Previous</button>
+        </div>
+    </div>
+
+    <div id="collaboration-panel">
+        <h2>Real-time Collaboration</h2>
+        <input type="text" id="room-id" placeholder="Enter room ID">
+        <button onclick="joinRoom()">Join Room</button>
+        <button onclick="leaveRoom()">Leave Room</button>
+        <div id="collaboration-status"></div>
+    </div>
+
+    <div id="result"></div>
+    <div id="timeline"></div>
+    <div id="entity-graph"></div>
+
+    <button onclick="exportPDF()">Export as PDF</button>
+
+    <script>
+        let currentStep = 1;
+        let caseData = {
+            title: '',
+            law_area: '',
+            parties: [],
+            events: [],
+            description: ''
+        };
+        let socket;
+        let currentRoom;
+
+        function nextStep(step) {
+            document.getElementById(`step${currentStep}`).classList.remove('active');
+            document.getElementById(`step${step}`).classList.add('active');
+            currentStep = step;
+            updateCaseData();
+        }
+
+        function previousStep(step) {
+            document.getElementById(`step${currentStep}`).classList.remove('active');
+            document.getElementById(`step${step}`).classList.add('active');
+            currentStep = step;
+        }
+
+        function updateCaseData() {
+            caseData.title = document.getElementById('case-title').value;
+            caseData.law_area = document.getElementById('law-area').value;
+            caseData.description = document.getElementById('case-description').value;
+            if (currentRoom) {
+                socket.emit('update_case', {room: currentRoom, case_data: caseData});
+            }
+        }
+
+        function addParty() {
+            const partyName = prompt("Enter party name:");
+            if (partyName) {
+                caseData.parties.push(partyName);
+                updatePartiesList();
+            }
+        }
+
+        function updatePartiesList() {
+            const partiesList = document.getElementById('parties-list');
+            partiesList.innerHTML = caseData.parties.map(party => `<div>${party}</div>`).join('');
+        }
+
+        function addEvent() {
+            const eventDescription = prompt("Enter event description:");
+            const eventDate = prompt("Enter event date (YYYY-MM-DD):");
+            if (eventDescription && eventDate) {
+                caseData.events.push({description: eventDescription, date: eventDate});
+                updateEventsList();
+            }
+        }
+
+        function updateEventsList() {
+            const eventsList = document.getElementById('events-list');
+            eventsList.innerHTML = caseData.events.map(event => `<div>${event.date}: ${event.description}</div>`).join('');
+        }
+
+        function analyzeCase() {
+            updateCaseData();
+            fetch('/analyze', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(caseData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                displayResults(JSON.parse(data));
+            })
+            .catch(error => console.error('Error:', error));
+        }
+
+        function displayResults(data) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = `
+                <h2>Analysis Results</h2>
+                <h3>Preliminary Judgment</h3>
+                <p>${data.preliminary_judgment}</p>
+                <h3>Confidence Level</h3>
+                <p>${data.confidence_level}</p>
+                <h3>Potential Outcomes</h3>
+                <ul>${data.potential_outcomes.map(o => `<li>${o}</li>`).join('')}</ul>
+                <h3>Additional Information Needed</h3>
+                <ul>${data.additional_info_needed.map(i => `<li>${i}</li>`).join('')}</ul>
+                <h3>Similar Cases</h3>
+                ${data.similar_cases.map(c => `
+                    <h4>${c.case_name}</h4>
+                    <p>Key Similarities:</p>
+                    <ul>${c.key_similarities.map(s => `<li>${s}</li>`).join('')}</ul>
+                    <p>Outcome: ${c.outcome}</p>
+                `).join('')}
+                <h3>Potential Challenges</h3>
+                <ul>${data.potential_challenges.map(c => `<li>${c}</li>`).join('')}</ul>
+            `;
+
+            // Generate interactive timeline
+            const timelineData = new vis.DataSet(
+                data.timeline.map((event, index) => ({
+                    id: index,
+                    content: event.event,
+                    start: event.date,
+                    title: `<strong>${event.event}</strong><br>Date: ${event.date}<br>Law: ${event.applicable_law}<br>Citations: ${event.case_citations.join(', ')}`
+                }))
+            );
+
+            const timelineOptions = {
+                height: '400px',
+                tooltip: {
+                    followMouse: true,
+                    overflowMethod: 'cap'
+                }
+            };
+
+            new vis.Timeline(document.getElementById('timeline'), timelineData, timelineOptions);
+
+            // Generate entity relationship graph
+            const nodes = new vis.DataSet(data.entities.map(e => ({id: e.name, label: e.name, group: e.type})));
+            const edges = new vis.DataSet(data.entity_relationships.map(r => ({from: r.source, to: r.target, label: r.relationship})));
+
+            const graphOptions = {
+                nodes: {
+                    shape: 'dot',
+                    size: 30,
+                    font: {
+                        size: 12,
+                        color: '#ffffff'
+                    },
+                    borderWidth: 2
+                },
+                edges: {
+                    width: 2
+                },
+                groups: {
+                    Person: {color: {background: '#3da4ab', border: '#2e7980'}},
+                    Organization: {color: {background: '#f6cd61', border: '#e6b800'}}
+                }
+            };
+
+            new vis.Network(document.getElementById('entity-graph'), {nodes: nodes, edges: edges}, graphOptions);
+        }
+
+        function joinRoom() {
+            const roomId = document.getElementById('room-id').value;
+            if (roomId) {
+                socket = io();
+                socket.emit('join', {room: roomId});
+                currentsocket = io();
+                socket.emit('join', {room: roomId});
+                currentRoom = roomId;
+                document.getElementById('collaboration-status').innerText = `Connected to room: ${roomId}`;
+                
+                socket.on('status', function(data) {
+                    document.getElementById('collaboration-status').innerText += '\n' + data.msg;
+                });
+                
+                socket.on('case_updated', function(data) {
+                    caseData = data;
+                    updateUI();
+                });
+            }
+        }
+
+        function leaveRoom() {
+            if (currentRoom) {
+                socket.emit('leave', {room: currentRoom});
+                socket.disconnect();
+                currentRoom = null;
+                document.getElementById('collaboration-status').innerText = 'Disconnected';
+            }
+        }
+
+        function updateUI() {
+            document.getElementById('case-title').value = caseData.title;
+            document.getElementById('law-area').value = caseData.law_area;
+            document.getElementById('case-description').value = caseData.description;
+            updatePartiesList();
+            updateEventsList();
+        }
+
+        function exportPDF() {
+            window.open('/export_pdf', '_blank');
+        }
+
+        function defineTerm(term) {
+            fetch(`/define/${term}`)
+                .then(response => response.json())
+                .then(data => {
+                    alert(`Definition of ${term}: ${data.definition}`);
+                })
+                .catch(error => console.error('Error:', error));
+        }
+    </script>
+</body>
+</html>
